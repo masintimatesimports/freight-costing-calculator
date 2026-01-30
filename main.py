@@ -55,21 +55,137 @@ air_rates, sea_rates = load_rate_tables()
 # ----------------------
 # LOGIN PAGE
 # ----------------------
+# ----------------------
+# LOGIN PAGE
+# ----------------------
 if not st.session_state.logged_in:
     st.title("🔑 Freight Calculator Login")
-
+    
+    # Login form
+    st.subheader("Login")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
-
-    if st.button("Login"):
+    
+    login_button = st.button("Login", type="primary")
+    
+    if login_button:
         if username in USERS and USERS[username] == password:
             st.session_state.logged_in = True
             st.session_state.role = "Admin" if username == "admin" else "Business"
             st.success(f"Logged in as {st.session_state.role}")
-            st.rerun()  # ADD THIS LINE TO FIX DOUBLE CLICK ISSUE
+            st.rerun()
         else:
             st.error("Invalid username or password")
+    
+    st.divider()
+    
+    # Instructions for Business Users
+    st.subheader("📋 Instructions for Business Users")
+    
+    # Quick login info
+    st.info("""
+    **For Business Teams:**
+    - **Username:** `business`
+    - **Password:** `business123`
+    
+    **Note:** Keep your login credentials secure and do not share with unauthorized personnel.
+    """)
+    
+    # Important checklist before using
+    with st.expander("✅ **BEFORE YOU START - CHECKLIST**", expanded=True):
+        st.markdown("""
+        ### 📋 Data Preparation Checklist
+        
+        **1. Supplier & Region Information:**
+        - ✓ Know your **supplier name**
+        - ✓ Have the **SQN reference number**
+        - ✓ Confirm the **country** of origin
+        - ✓ Identify the **port of loading/origin city**
+        
+        **2. Technical Specifications:**
+        - ✓ Get the **exact weight value**
+        - ✓ Know the **weight type** (GSM/GLM)
+        - ✓ Ensure **correct unit of measurement** selected
+        - ✓ Have the **width measurement**
+        - ✓ Confirm **width unit** (CM/IN/M)
+        
+        **3. Measurement Verification:**
+        - ✓ Double-check **GSM vs GLM** selection
+        - ✓ Verify **unit conversions** if needed
+        - ✓ Cross-check **width measurements**
+        - ✓ Ensure **decimal accuracy** for calculations
+        """)
+    
+    # How to use instructions
+    with st.expander("📝 **HOW TO USE THE CALCULATOR**", expanded=False):
+        st.markdown("""
+        ### Step-by-Step Guide
+        
+        **Step 1: Enter Item Details**
+        - Fill in **Supplier** name
+        - Enter **SQN** reference number
+        - Select **Country** and **Origin** from dropdowns
+        
+        **Step 2: Input Specifications**
+        - Enter **Weight Value** (e.g., 150, 2.5, etc.)
+        - Select **Weight Type** (GSM g/m², GSM kg/m², or GLM g/m)
+        - Enter **Width** measurement
+        - Choose **Unit** (CM, IN, or M)
+        
+        **Step 3: Add Multiple Items (If Needed)**
+        - Click **"➕ Add Another Item"** button
+        - Repeat steps 1-2 for each additional item
+        - Remove unwanted items using **🗑️ Remove** button
+        
+        **Step 4: Review & Copy Results**
+        - Check the **Summary Table** for all items
+        - Review **Freight Results** for each item
+        - **Copy the email-ready preview** for sharing
+        - Save the **confirmation text** for records
+        """)
+    
+    # Important reminders
+    with st.expander("⚠️ **IMPORTANT REMINDERS**", expanded=False):
+        st.markdown("""
+        ### Critical Points to Remember
+        
+        **⚠️ Rate Information:**
+        - These are **APPROXIMATE** costs only
+        - Freight rates **change daily** due to market volatility
+        - Some routes may **not have available rates**
+        - Always **confirm with Logistics** for final rates
+        
+        **⚠️ Data Accuracy:**
+        - **Double-check all inputs** before proceeding
+        - **Incorrect measurements** = wrong calculations
+        - **Save/Screenshot** your results
+        - **Copy the email preview** for documentation
+        
+        **⚠️ Final Steps:**
+        - **Copy the final results** before logging out
+        - **Include confirmation text** in communications
+        - **Contact Logistics team** for rate verification
+        - **Do not proceed with shipments** without final confirmation
+        """)
+    
+    # Quick tips
+    st.info("""
+    **💡 Quick Tips:**
+    - Use **decimal points** for accurate measurements (e.g., 150.5 not 150)
+    - If using **GLM (g/m)**, ensure **width is correctly entered**
+    - **Add multiple items** for comparing different suppliers/regions
+    - **Contact Logistics** immediately if rates seem incorrect
+    """)
+    
+    # Final warning
+    st.warning("""
+    **🚨 IMPORTANT DISCLAIMER:** 
+    All calculations are based on current market data and provided measurements. 
+    **Final freight rates MUST be confirmed by the Logistics department** before proceeding with any shipments. 
+    The company is not liable for costs arising from using unconfirmed rate calculations.
+    """)
 
+# REST OF YOUR CODE REMAINS THE SAME...
 else:
 
     role = st.session_state.role
