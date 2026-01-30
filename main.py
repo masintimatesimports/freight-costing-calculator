@@ -66,6 +66,7 @@ if not st.session_state.logged_in:
             st.session_state.logged_in = True
             st.session_state.role = "Admin" if username == "admin" else "Business"
             st.success(f"Logged in as {st.session_state.role}")
+            st.rerun()  # ADD THIS LINE TO FIX DOUBLE CLICK ISSUE
         else:
             st.error("Invalid username or password")
 
@@ -281,7 +282,6 @@ else:
         all_results_data.append(item_data)
 
     # Display all results in single summary table
-    # Display all results in single summary table
     df = pd.DataFrame(all_results_data)
     st.subheader("📋 Summary Table & Confirmation")
     
@@ -390,10 +390,24 @@ else:
             "Air Rate": air_rate,
             "Sea Rate": sea_rate
         })
-    # Display as markdown table
+    
+    # Display as markdown table (WITHOUT TABULATE - simpler method)
     if table_data:
-        df_preview = pd.DataFrame(table_data)
-        st.markdown(df_preview.to_markdown(index=False))
+        # Simple HTML table without tabulate
+        html_table = "<table style='width:100%; border-collapse: collapse;'>"
+        html_table += "<tr style='background-color: #f2f2f2;'>"
+        for col in ["Item", "Supplier", "SQN", "Country", "Origin", "Weight", "Width", "Weight/m", "Air Rate", "Sea Rate"]:
+            html_table += f"<th style='border: 1px solid #ddd; padding: 8px; text-align: left;'>{col}</th>"
+        html_table += "</tr>"
+        
+        for row in table_data:
+            html_table += "<tr>"
+            for col in ["Item", "Supplier", "SQN", "Country", "Origin", "Weight", "Width", "Weight/m", "Air Rate", "Sea Rate"]:
+                html_table += f"<td style='border: 1px solid #ddd; padding: 8px;'>{row[col]}</td>"
+            html_table += "</tr>"
+        html_table += "</table>"
+        
+        st.markdown(html_table, unsafe_allow_html=True)
     
     # Confirmation note below
     st.info("""
@@ -406,6 +420,7 @@ else:
     
     These outputs are calculated and confirmed by Logistics.
     """)
+    
     # ----------------------
     # DISPLAY RESULTS FOR EACH ITEM
     # ----------------------
