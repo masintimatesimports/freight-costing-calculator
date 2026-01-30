@@ -288,76 +288,76 @@ else:
     # Display dataframe
     st.dataframe(df)
     
-    # Create a copyable text version with table format
-    st.divider()
-    st.subheader("📋 Copy for Email")
+    # # Create a copyable text version with table format
+    # st.divider()
+    # st.subheader("📋 Copy for Email")
     
-    # Create a clean table text version for copying
-    summary_text = "FREIGHT RATE CALCULATION SUMMARY\n"
-    summary_text += "=" * 50 + "\n\n"
+    # # Create a clean table text version for copying
+    # summary_text = "FREIGHT RATE CALCULATION SUMMARY\n"
+    # summary_text += "=" * 50 + "\n\n"
     
-    # Header row
-    headers = ["Item", "Supplier", "SQN", "Country", "Origin", "Weight", "Width", "Air Rate ($/m)", "Sea Rate ($/m)"]
-    summary_text += " | ".join(headers) + "\n"
-    summary_text += "-" * 100 + "\n"
+    # # Header row
+    # headers = ["Item", "Supplier", "SQN", "Country", "Origin", "Weight", "Width", "Air Rate ($/m)", "Sea Rate ($/m)"]
+    # summary_text += " | ".join(headers) + "\n"
+    # summary_text += "-" * 100 + "\n"
     
-    # Data rows
-    for idx, row in df.iterrows():
-        item_num = f"Item {idx + 1}"
-        supplier = str(row['Supplier'])[:15] if len(str(row['Supplier'])) > 15 else str(row['Supplier'])
-        sqn = str(row['SQN'])[:10] if len(str(row['SQN'])) > 10 else str(row['SQN'])
-        country = str(row['Country'])[:10] if len(str(row['Country'])) > 10 else str(row['Country'])
-        origin = str(row['Origin'])[:10] if len(str(row['Origin'])) > 10 else str(row['Origin'])
-        weight = f"{row['Weight Value']} {row['Weight Type'][:8]}"
-        width = f"{row['Width']} {row['Unit']}"
+    # # Data rows
+    # for idx, row in df.iterrows():
+    #     item_num = f"Item {idx + 1}"
+    #     supplier = str(row['Supplier'])[:15] if len(str(row['Supplier'])) > 15 else str(row['Supplier'])
+    #     sqn = str(row['SQN'])[:10] if len(str(row['SQN'])) > 10 else str(row['SQN'])
+    #     country = str(row['Country'])[:10] if len(str(row['Country'])) > 10 else str(row['Country'])
+    #     origin = str(row['Origin'])[:10] if len(str(row['Origin'])) > 10 else str(row['Origin'])
+    #     weight = f"{row['Weight Value']} {row['Weight Type'][:8]}"
+    #     width = f"{row['Width']} {row['Unit']}"
         
-        # Get rates
-        air_rate = f"${row['Final Air Rate ($)']:.4f}" if 'Final Air Rate ($)' in row and pd.notna(row['Final Air Rate ($)']) else "N/A"
-        sea_rate = f"${row['Final Sea Rate ($)']:.4f}" if 'Final Sea Rate ($)' in row and pd.notna(row['Final Sea Rate ($)']) else "N/A"
+    #     # Get rates
+    #     air_rate = f"${row['Final Air Rate ($)']:.4f}" if 'Final Air Rate ($)' in row and pd.notna(row['Final Air Rate ($)']) else "N/A"
+    #     sea_rate = f"${row['Final Sea Rate ($)']:.4f}" if 'Final Sea Rate ($)' in row and pd.notna(row['Final Sea Rate ($)']) else "N/A"
         
-        summary_text += f"{item_num:8} | {supplier:15} | {sqn:10} | {country:10} | {origin:10} | {weight:20} | {width:10} | {air_rate:15} | {sea_rate:15}\n"
+    #     summary_text += f"{item_num:8} | {supplier:15} | {sqn:10} | {country:10} | {origin:10} | {weight:20} | {width:10} | {air_rate:15} | {sea_rate:15}\n"
     
-    summary_text += "\n" + "=" * 50 + "\n\n"
+    # summary_text += "\n" + "=" * 50 + "\n\n"
     
-    # Add details for each item in a cleaner format
-    summary_text += "DETAILED BREAKDOWN:\n"
-    summary_text += "-" * 50 + "\n\n"
+    # # Add details for each item in a cleaner format
+    # summary_text += "DETAILED BREAKDOWN:\n"
+    # summary_text += "-" * 50 + "\n\n"
     
-    for idx, row in df.iterrows():
-        summary_text += f"{idx + 1}. {row['Supplier']} - {row['SQN']}:\n"
-        summary_text += f"   • Country/Origin: {row['Country']} / {row['Origin']}\n"
-        summary_text += f"   • Weight: {row['Weight Value']} {row['Weight Type']}"
-        if pd.notna(row['Converted GSM (g/m²)']):
-            summary_text += f" (Converted: {row['Converted GSM (g/m²)']} g/m²)"
-        summary_text += "\n"
-        summary_text += f"   • Width: {row['Width']} {row['Unit']} = {row['Width (m)']} m\n"
-        summary_text += f"   • Weight per meter: {row['Weight/m (kg)']} kg/m\n"
+    # for idx, row in df.iterrows():
+    #     summary_text += f"{idx + 1}. {row['Supplier']} - {row['SQN']}:\n"
+    #     summary_text += f"   • Country/Origin: {row['Country']} / {row['Origin']}\n"
+    #     summary_text += f"   • Weight: {row['Weight Value']} {row['Weight Type']}"
+    #     if pd.notna(row['Converted GSM (g/m²)']):
+    #         summary_text += f" (Converted: {row['Converted GSM (g/m²)']} g/m²)"
+    #     summary_text += "\n"
+    #     summary_text += f"   • Width: {row['Width']} {row['Unit']} = {row['Width (m)']} m\n"
+    #     summary_text += f"   • Weight per meter: {row['Weight/m (kg)']} kg/m\n"
         
-        if 'Final Air Rate ($)' in row and pd.notna(row['Final Air Rate ($)']):
-            summary_text += f"   • Air Freight Rate: ${row['Final Air Rate ($)']:.4f} per meter\n"
-        if 'Final Sea Rate ($)' in row and pd.notna(row['Final Sea Rate ($)']):
-            summary_text += f"   • Sea Freight Rate: ${row['Final Sea Rate ($)']:.4f} per meter\n"
+    #     if 'Final Air Rate ($)' in row and pd.notna(row['Final Air Rate ($)']):
+    #         summary_text += f"   • Air Freight Rate: ${row['Final Air Rate ($)']:.4f} per meter\n"
+    #     if 'Final Sea Rate ($)' in row and pd.notna(row['Final Sea Rate ($)']):
+    #         summary_text += f"   • Sea Freight Rate: ${row['Final Sea Rate ($)']:.4f} per meter\n"
         
-        summary_text += "\n"
+    #     summary_text += "\n"
     
-    # Add confirmation at the end
-    summary_text += "CONFIRMATION:\n"
-    summary_text += "=" * 50 + "\n\n"
-    summary_text += "Please find below the approximate per meter/per piece freight cost based on your request.\n\n"
-    summary_text += "Kindly note that these costs have been calculated using the material details provided by your team, "
-    summary_text += "along with the current market freight rates. However, please be aware that these rates are subject "
-    summary_text += "to change and may vary from the actual costs due to high volatility in the freight market.\n\n"
-    summary_text += "These outputs are calculated and confirmed by Logistics.\n"
+    # # Add confirmation at the end
+    # summary_text += "CONFIRMATION:\n"
+    # summary_text += "=" * 50 + "\n\n"
+    # summary_text += "Please find below the approximate per meter/per piece freight cost based on your request.\n\n"
+    # summary_text += "Kindly note that these costs have been calculated using the material details provided by your team, "
+    # summary_text += "along with the current market freight rates. However, please be aware that these rates are subject "
+    # summary_text += "to change and may vary from the actual costs due to high volatility in the freight market.\n\n"
+    # summary_text += "These outputs are calculated and confirmed by Logistics.\n"
     
-    # Display in a text area for easy copying
-    st.text_area("📄 Copy the text below for email (Ctrl+A then Ctrl+C):", 
-                value=summary_text, 
-                height=400,
-                key="copyable_summary")
+    # # Display in a text area for easy copying
+    # st.text_area("📄 Copy the text below for email (Ctrl+A then Ctrl+C):", 
+    #             value=summary_text, 
+    #             height=400,
+    #             key="copyable_summary")
     
     # Also show a clean markdown version for reference
     st.divider()
-    st.subheader("📧 Email-ready Format Preview")
+    st.subheader("📧 Email Confirming Preview-Copy Below")
     
     # Create markdown table preview
     table_data = []
