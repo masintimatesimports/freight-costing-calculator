@@ -6,11 +6,21 @@ st.set_page_config(page_title="Freight Rate Calculator", layout="wide")
 # ----------------------
 # USERS & PASSWORDS
 # ----------------------
+# ----------------------
+# USERS & PASSWORDS
+# ----------------------
 USERS = {
-    "admin": "admin123",
-    "business": "business123"
+    "admin": {
+        "password": "admin123",
+        "email": "admin",
+        "display_name": "Admin"
+    }
+    # Business users will be added dynamically
 }
 
+# Store business users in session state
+if "business_users" not in st.session_state:
+    st.session_state.business_users = {}
 # ----------------------
 # SESSION STATE INIT
 # ----------------------
@@ -22,36 +32,71 @@ if "logged_in" not in st.session_state:
 # ----------------------
 # LOAD RATE TABLES
 # ----------------------
+# ----------------------
+# LOAD RATE TABLES
+# ----------------------
 @st.cache_data(ttl=1800)
 def load_rate_tables():
     url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSUIxBeSTWHg5CaTSAPDPo-cBOA_ah9M7sJ-GOpBemYl6VlJyQma9eWPVpLg2uiXk_0LPlHiimfZulz/pub?output=xlsx"
 
-    air_df = pd.read_excel(url, sheet_name="Air Freight - SL")
-    sea_df = pd.read_excel(url, sheet_name="Sea Freight - SL")
-
-    latest_air_col = air_df.columns[-1]
-    latest_sea_col = sea_df.columns[-1]
-
+    # Get all sheet names first
+    xls = pd.ExcelFile(url)
+    all_sheets = xls.sheet_names
+    
+    # Filter sheets for Air and Sea freight
+    air_sheets = [s for s in all_sheets if "Air Freight" in s]
+    sea_sheets = [s for s in all_sheets if "Sea Freight" in s]
+    
+    # Extract destinations from sheet names (assuming format: "Air Freight - DESTINATION")
+    air_destinations = sorted([s.replace("Air Freight - ", "") for s in air_sheets])
+    sea_destinations = sorted([s.replace("Sea Freight - ", "") for s in sea_sheets])
+    all_destinations = sorted(set(air_destinations + sea_destinations))
+    
+    # Load data for each destination
     air_rates = {}
-    for _, row in air_df.iterrows():
-        c = row["Country"]
-        o = row["Origin"]
-        r = row[latest_air_col]
-        air_rates.setdefault(c, {})[o] = r
-
     sea_rates = {}
-    for _, row in sea_df.iterrows():
-        c = row["Country"]
-        o = row["Origin"]
-        r = row[latest_sea_col]
-        sea_rates.setdefault(c, {})[o] = r
+    
+    # Load Air Freight sheets
+    for sheet in air_sheets:
+        destination = sheet.replace("Air Freight - ", "")
+        df = pd.read_excel(url, sheet_name=sheet)
+        latest_col = df.columns[-1]
+        
+        for _, row in df.iterrows():
+            c = row["Country"]
+            o = row["Origin"]
+            r = row[latest_col]
+            if c not in air_rates:
+                air_rates[c] = {}
+            if o not in air_rates[c]:
+                air_rates[c][o] = {}
+            air_rates[c][o][destination] = r
+    
+    # Load Sea Freight sheets
+    for sheet in sea_sheets:
+        destination = sheet.replace("Sea Freight - ", "")
+        df = pd.read_excel(url, sheet_name=sheet)
+        latest_col = df.columns[-1]
+        
+        for _, row in df.iterrows():
+            c = row["Country"]
+            o = row["Origin"]
+            r = row[latest_col]
+            if c not in sea_rates:
+                sea_rates[c] = {}
+            if o not in sea_rates[c]:
+                sea_rates[c][o] = {}
+            sea_rates[c][o][destination] = r
 
-    return air_rates, sea_rates
+    return air_rates, sea_rates, all_destinations
+
+# Update the function call
+air_rates, sea_rates, all_destinations = load_rate_tables()
 
 
-air_rates, sea_rates = load_rate_tables()
-
-
+# ----------------------
+# LOGIN PAGE
+# ----------------------
 # ----------------------
 # LOGIN PAGE
 # ----------------------
@@ -63,30 +108,58 @@ if not st.session_state.logged_in:
     
     # Login form
     st.subheader("Login")
-    username = st.text_input("Username")
+    
+    # Radio button for user type
+    user_type = st.radio("Select User Type", ["Admin", "Business"], horizontal=True)
+    
+    username = st.text_input("Username/Email")
     password = st.text_input("Password", type="password")
     
     login_button = st.button("Login", type="primary")
     
     if login_button:
-        if username in USERS and USERS[username] == password:
-            st.session_state.logged_in = True
-            st.session_state.role = "Admin" if username == "admin" else "Business"
-            st.success(f"Logged in as {st.session_state.role}")
-            st.rerun()
-        else:
-            st.error("Invalid username or password")
+        if user_type == "Admin":
+            if username in USERS and USERS[username]["password"] == password:
+                st.session_state.logged_in = True
+                st.session_state.role = "Admin"
+                st.session_state.user_email = USERS[username]["email"]
+                st.session_state.display_name = USERS[username]["display_name"]
+                st.success(f"Logged in as Admin")
+                st.rerun()
+            else:
+                st.error("Invalid username or password")
+        else:  # Business
+            # Check if user exists in business_users
+            if username in st.session_state.business_users and st.session_state.business_users[username]["password"] == password:
+                st.session_state.logged_in = True
+                st.session_state.role = "Business"
+                st.session_state.user_email = username
+                st.session_state.display_name = username.split('@')[0]  # Use part before @ as display name
+                st.success(f"Logged in as {st.session_state.display_name}")
+                st.rerun()
+            else:
+                # Auto-register new business users (optional - remove if you want manual registration)
+                st.session_state.business_users[username] = {
+                    "password": password,
+                    "created_at": pd.Timestamp.now()
+                }
+                st.session_state.logged_in = True
+                st.session_state.role = "Business"
+                st.session_state.user_email = username
+                st.session_state.display_name = username.split('@')[0]
+                st.success(f"New account created and logged in as {st.session_state.display_name}")
+                st.rerun()
     
     st.divider()
     
-    # Instructions for Business Users
+    # Updated instructions for Business Users
     st.subheader("📋 Instructions for Business Users")
     
-    # Quick login info
+    # Updated login info
     st.info("""
     **For Business Teams:**
-    - **Username:** `business`
-    - **Password:** `business123`
+    - **Username:** Your office email address
+    - **Password:** Any password you choose (will auto-register on first login)
     
     **Note:** Keep your login credentials secure and do not share with unauthorized personnel.
     """)
@@ -190,11 +263,31 @@ else:
 
     role = st.session_state.role
     st.title(f"📦 Freight Rate Calculator ({role})")
+    # Add admin link right after title
+    if role == "Admin":
+        st.markdown("""
+        <div style="background-color: #e8f4fd; padding: 10px; border-radius: 5px; margin-bottom: 20px;">
+            <strong>🔧 Admin Actions:</strong> To update freight rates, please 
+            <a href="https://docs.google.com/spreadsheets/d/1VbxX1HVABJOi24J9oZ_u-BW02I4cAQTGi0QJHPFWQ9Y/edit?gid=0#gid=0" target="_blank">
+                click here to access the master rate spreadsheet
+            </a>
+            <br>
+            <small>Changes made to the spreadsheet will automatically reflect in the calculator within 30 minutes.</small>
+        </div>
+        """, unsafe_allow_html=True)
+    # Display user info in header
+    col1, col2, col3 = st.columns([3, 1, 1])
+    with col1:
+        st.markdown(f"### Welcome, {st.session_state.display_name}!")
+        st.caption(f"Logged in as: {st.session_state.user_email} ({role})")
+    with col3:
+        if st.button("Logout"):
+            st.session_state.logged_in = False
+            st.session_state.role = None
+            st.session_state.user_email = None
+            st.session_state.display_name = None
+            st.rerun()
 
-    if st.sidebar.button("Logout"):
-        st.session_state.logged_in = False
-        st.session_state.role = None
-        st.rerun()
 
     # ----------------------
     # CONSTANTS
@@ -205,27 +298,34 @@ else:
 
 
 
+
+
     # ----------------------
     # INPUTS (MAIN ITEM)
     # ----------------------
-    col_item, col_region, col_weight, col_width = st.columns([2, 2, 2, 2])
+    col_item, col_region, col_dest, col_weight, col_width = st.columns([2, 2, 2, 2, 2])
 
     all_countries = sorted(set(air_rates.keys()) | set(sea_rates.keys()))
 
     with col_item:
-        st.subheader("📦 Item Information")
+        st.subheader("📦 Item")
         supplier = st.text_input("Supplier", key="main_supplier")
         sqn = st.text_input("SQN", key="main_sqn")
 
     with col_region:
-        st.subheader("🗺️ Region")
+        st.subheader("🗺️ Origin")
         country = st.selectbox("Country", all_countries, key="main_country")
         
+        # Get origins for selected country
         air_origins = set(air_rates.get(country, {}).keys())
         sea_origins = set(sea_rates.get(country, {}).keys())
         all_origins = sorted(air_origins | sea_origins)
         
         origin = st.selectbox("Origin", all_origins, key="main_origin")
+
+    with col_dest:
+        st.subheader("🎯 Destination")
+        destination = st.selectbox("Destination", all_destinations, key="main_destination")
 
     with col_weight:
         st.subheader("🧵 Weight")
@@ -243,6 +343,7 @@ else:
         "sqn": sqn,
         "country": country,
         "origin": origin,
+        "destination": destination,  # Add destination
         "weight_value": weight_value,
         "weight_type": weight_type,
         "width": width,
@@ -255,6 +356,7 @@ else:
     st.divider()
 
     # Initialize additional rows in session state
+    # Initialize additional rows in session state
     if "additional_rows" not in st.session_state:
         st.session_state.additional_rows = []
 
@@ -265,6 +367,7 @@ else:
             "sqn": "",
             "country": "",
             "origin": "",
+            "destination": "",  # Add destination
             "weight_value": 0.0,
             "weight_type": "GSM (g/m²)",
             "width": 0.0,
@@ -275,7 +378,7 @@ else:
     # Display additional items
     for idx, row in enumerate(st.session_state.additional_rows):
         with st.expander(f"Additional Item {idx + 1}", expanded=True):
-            cols = st.columns([2, 2, 2, 2, 1])
+            cols = st.columns([2, 2, 2, 2, 2, 1])  # Added one more column
             
             with cols[0]:
                 st.subheader("📦 Item Info")
@@ -283,7 +386,7 @@ else:
                 row["sqn"] = st.text_input("SQN", value=row["sqn"], key=f"add_sqn_{idx}")
             
             with cols[1]:
-                st.subheader("🗺️ Region")
+                st.subheader("🗺️ Origin")
                 row["country"] = st.selectbox("Country", all_countries, key=f"add_country_{idx}")
                 
                 air_origins = set(air_rates.get(row["country"], {}).keys())
@@ -293,16 +396,20 @@ else:
                 row["origin"] = st.selectbox("Origin", all_origins_add, key=f"add_origin_{idx}")
             
             with cols[2]:
+                st.subheader("🎯 Destination")
+                row["destination"] = st.selectbox("Destination", all_destinations, key=f"add_destination_{idx}")
+            
+            with cols[3]:
                 st.subheader("🧵 Weight")
                 row["weight_value"] = st.number_input("Weight Value", min_value=0.0, step=0.1, value=row["weight_value"], key=f"add_weight_{idx}")
                 row["weight_type"] = st.selectbox("Weight Type", ["GSM (g/m²)", "GSM (kg/m²)", "GLM (g/m)"], key=f"add_weight_type_{idx}")
             
-            with cols[3]:
+            with cols[4]:
                 st.subheader("📏 Width")
                 row["width"] = st.number_input("Width", min_value=0.0, step=0.1, value=row["width"], key=f"add_width_{idx}")
                 row["unit"] = st.selectbox("Unit", ["CM", "IN", "M"], key=f"add_unit_{idx}")
             
-            with cols[4]:
+            with cols[5]:
                 st.subheader(" ")
                 st.write(" ")
                 if st.button("🗑️ Remove", key=f"remove_{idx}"):
@@ -311,6 +418,7 @@ else:
             
             # Add to results
             results.append(row)
+
 
     # ----------------------
     # CALCULATIONS FOR ALL ITEMS
@@ -336,9 +444,16 @@ else:
         
         kg_per_m_item = gsm_kg_item * width_m_item
         
-        # RATE AVAILABILITY for each item
-        air_rate_item = air_rates.get(item["country"], {}).get(item["origin"])
-        sea_rate_item = sea_rates.get(item["country"], {}).get(item["origin"])
+        # RATE AVAILABILITY for each item (now destination-specific)
+        air_rate_item = None
+        sea_rate_item = None
+        
+        # Check if country and origin exist in rates
+        if country in air_rates and item["origin"] in air_rates[item["country"]]:
+            air_rate_item = air_rates[item["country"]][item["origin"]].get(item["destination"])
+        
+        if country in sea_rates and item["origin"] in sea_rates[item["country"]]:
+            sea_rate_item = sea_rates[item["country"]][item["origin"]].get(item["destination"])
         
         air_available_item = air_rate_item is not None
         sea_available_item = sea_rate_item is not None
@@ -359,10 +474,13 @@ else:
         # Build result data for this item
         item_data = {
             "Item": f"Item {idx + 1}",
+            "User": st.session_state.display_name,
+            "User Email": st.session_state.user_email,
             "Supplier": item["supplier"],
             "SQN": item["sqn"], 
             "Country": item["country"],
             "Origin": item["origin"],
+            "Destination": item["destination"],  # Add destination
             "Weight Value": item["weight_value"],
             "Weight Type": item["weight_type"],
             "Converted GSM (g/m²)": round(display_gsm_item, 2) if item["weight_type"] == "GLM (g/m)" else None,
@@ -371,6 +489,8 @@ else:
             "Width (m)": round(width_m_item, 4),
             "Weight/m (kg)": round(kg_per_m_item, 6),
         }
+    
+    # Rest of your code remains the same...
         
         # ---- Admin sees full rate breakdown
         if role == "Admin":
@@ -478,7 +598,6 @@ else:
     # Create markdown table preview
     table_data = []
     for idx, row in df.iterrows():
-
         # Format weight with type
         weight_display = f"{row['Weight Value']}"
         if pd.notna(row['Converted GSM (g/m²)']):
@@ -496,29 +615,30 @@ else:
         
         table_data.append({
             "Item": idx + 1,
+            "User": row['User'],
             "Supplier": row['Supplier'],
             "SQN": row['SQN'],
             "Country": row['Country'],
             "Origin": row['Origin'],
+            "Destination": row['Destination'],  # Add destination
             "Weight": weight_display,
             "Width": width_display,
             "Weight/m": weight_per_m,
             "Air Rate": air_rate,
             "Sea Rate": sea_rate
         })
-    
-    # Display as markdown table (WITHOUT TABULATE - simpler method)
+
+    # Update HTML table headers
     if table_data:
-        # Simple HTML table without tabulate
         html_table = "<table style='width:100%; border-collapse: collapse;'>"
         html_table += "<tr style='background-color: #f2f2f2;'>"
-        for col in ["Item", "Supplier", "SQN", "Country", "Origin", "Weight", "Width", "Weight/m", "Air Rate", "Sea Rate"]:
+        for col in ["Item", "User", "Supplier", "SQN", "Country", "Origin", "Destination", "Weight", "Width", "Weight/m", "Air Rate", "Sea Rate"]:
             html_table += f"<th style='border: 1px solid #ddd; padding: 8px; text-align: left;'>{col}</th>"
         html_table += "</tr>"
         
         for row in table_data:
             html_table += "<tr>"
-            for col in ["Item", "Supplier", "SQN", "Country", "Origin", "Weight", "Width", "Weight/m", "Air Rate", "Sea Rate"]:
+            for col in ["Item", "User", "Supplier", "SQN", "Country", "Origin", "Destination", "Weight", "Width", "Weight/m", "Air Rate", "Sea Rate"]:
                 html_table += f"<td style='border: 1px solid #ddd; padding: 8px;'>{row[col]}</td>"
             html_table += "</tr>"
         html_table += "</table>"
@@ -526,15 +646,15 @@ else:
         st.markdown(html_table, unsafe_allow_html=True)
     
     # Confirmation note below
-    st.info("""
-    **Confirmation:**  
+    st.info(f"""
+    **Confirmation for {st.session_state.display_name} ({st.session_state.user_email}):**  
     Please find below the approximate per meter/per piece freight cost based on your request.  
-    
+
     Kindly note that these costs have been calculated using the material details provided by your team, 
     along with the current market freight rates. However, please be aware that these rates are subject 
     to change and may vary from the actual costs due to high volatility in the freight market.  
-    
-    These outputs are calculated and confirmed by Logistics.
+
+    These outputs are calculated and confirmed by Logistics for {st.session_state.display_name}.
     """)
     
     # ----------------------
@@ -590,9 +710,11 @@ else:
             
             # Confirmation text for each item
             st.divider()
+            # Update the item confirmation text in the expander section
             msg = (
                 f"Item {idx + 1}: With inputs — weight: {item['weight_value']} {item['weight_type']}, "
-                f"width: {item['width']} {item['unit']}, region: {item['country']} - {item['origin']} — "
+                f"width: {item['width']} {item['unit']}, origin: {item['country']} - {item['origin']}, "
+                f"destination: {item['destination']} — "
             )
             
             if air_available_item and sea_available_item:
