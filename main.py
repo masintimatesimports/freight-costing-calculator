@@ -32,9 +32,6 @@ if "logged_in" not in st.session_state:
 # ----------------------
 # LOAD RATE TABLES
 # ----------------------
-# ----------------------
-# LOAD RATE TABLES
-# ----------------------
 @st.cache_data(ttl=1800)
 def load_rate_tables():
     url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSUIxBeSTWHg5CaTSAPDPo-cBOA_ah9M7sJ-GOpBemYl6VlJyQma9eWPVpLg2uiXk_0LPlHiimfZulz/pub?output=xlsx"
@@ -47,25 +44,70 @@ def load_rate_tables():
     air_sheets = [s for s in all_sheets if "Air Freight" in s]
     sea_sheets = [s for s in all_sheets if "Sea Freight" in s]
     
-    # Extract destinations from sheet names (assuming format: "Air Freight - DESTINATION")
+    # Extract destinations from sheet names
     air_destinations = sorted([s.replace("Air Freight - ", "") for s in air_sheets])
     sea_destinations = sorted([s.replace("Sea Freight - ", "") for s in sea_sheets])
     all_destinations = sorted(set(air_destinations + sea_destinations))
     
-    # Load data for each destination
-    air_rates = {}
-    sea_rates = {}
+    # Create destination-specific country-origin mappings
+    destination_countries = {}
+    
+    # Track the latest date across all sheets
+    latest_date = None
+    all_dates = []
     
     # Load Air Freight sheets
+    air_rates = {}
     for sheet in air_sheets:
         destination = sheet.replace("Air Freight - ", "")
         df = pd.read_excel(url, sheet_name=sheet)
+        
+        # Get the last column name (which should be a date)
         latest_col = df.columns[-1]
+        
+        # Try to parse the date
+        try:
+            # Try to convert to datetime
+            if isinstance(latest_col, str):
+                # Try different date formats
+                for date_format in ['%m/%d/%Y', '%d/%m/%Y', '%Y-%m-%d', '%m/%d/%y']:
+                    try:
+                        col_date = pd.to_datetime(latest_col, format=date_format)
+                        break
+                    except:
+                        continue
+                else:
+                    # If no format matches, try pandas default parser
+                    col_date = pd.to_datetime(latest_col)
+            else:
+                col_date = pd.to_datetime(latest_col)
+            
+            all_dates.append(col_date)
+            
+            # Update latest_date
+            if latest_date is None or col_date > latest_date:
+                latest_date = col_date
+        except:
+            # If date parsing fails, use current date as fallback
+            col_date = pd.Timestamp.now()
+            all_dates.append(col_date)
+        
+        # Store countries and origins for this destination
+        if destination not in destination_countries:
+            destination_countries[destination] = {"countries": set(), "origins_by_country": {}}
         
         for _, row in df.iterrows():
             c = row["Country"]
             o = row["Origin"]
             r = row[latest_col]
+            
+            # Add to destination_countries
+            destination_countries[destination]["countries"].add(c)
+            if c not in destination_countries[destination]["origins_by_country"]:
+                destination_countries[destination]["origins_by_country"][c] = set()
+            destination_countries[destination]["origins_by_country"][c].add(o)
+            
+            # Store rates
             if c not in air_rates:
                 air_rates[c] = {}
             if o not in air_rates[c]:
@@ -73,27 +115,107 @@ def load_rate_tables():
             air_rates[c][o][destination] = r
     
     # Load Sea Freight sheets
+    sea_rates = {}
     for sheet in sea_sheets:
         destination = sheet.replace("Sea Freight - ", "")
         df = pd.read_excel(url, sheet_name=sheet)
+        
+        # Get the last column name (which should be a date)
         latest_col = df.columns[-1]
+        
+        # Try to parse the date
+        try:
+            # Try to convert to datetime
+            if isinstance(latest_col, str):
+                # Try different date formats
+                for date_format in ['%m/%d/%Y', '%d/%m/%Y', '%Y-%m-%d', '%m/%d/%y']:
+                    try:
+                        col_date = pd.to_datetime(latest_col, format=date_format)
+                        break
+                    except:
+                        continue
+                else:
+                    # If no format matches, try pandas default parser
+                    col_date = pd.to_datetime(latest_col)
+            else:
+                col_date = pd.to_datetime(latest_col)
+            
+            all_dates.append(col_date)
+            
+            # Update latest_date
+            if latest_date is None or col_date > latest_date:
+                latest_date = col_date
+        except:
+            # If date parsing fails, use current date as fallback
+            col_date = pd.Timestamp.now()
+            all_dates.append(col_date)
+        
+        # Store countries and origins for this destination
+        if destination not in destination_countries:
+            destination_countries[destination] = {"countries": set(), "origins_by_country": {}}
         
         for _, row in df.iterrows():
             c = row["Country"]
             o = row["Origin"]
             r = row[latest_col]
+            
+            # Add to destination_countries
+            destination_countries[destination]["countries"].add(c)
+            if c not in destination_countries[destination]["origins_by_country"]:
+                destination_countries[destination]["origins_by_country"][c] = set()
+            destination_countries[destination]["origins_by_country"][c].add(o)
+            
+            # Store rates
             if c not in sea_rates:
                 sea_rates[c] = {}
             if o not in sea_rates[c]:
                 sea_rates[c][o] = {}
             sea_rates[c][o][destination] = r
-
-    return air_rates, sea_rates, all_destinations
+    
+    # Load Markup sheet
+    markups = {}
+    rm_types = []
+    
+    try:
+        markup_df = pd.read_excel(url, sheet_name="Markup")
+        
+        # Get RM Types from first column
+        rm_types = markup_df.iloc[:, 0].tolist()
+        
+        # Get destination columns (all columns except first)
+        dest_columns = markup_df.columns[1:]
+        
+        # Build markup dictionary
+        for _, row in markup_df.iterrows():
+            rm_type = row.iloc[0]
+            markups[rm_type] = {}
+            for dest in dest_columns:
+                markups[rm_type][dest] = row[dest]
+    except Exception as e:
+        st.error(f"Error loading markups: {e}")
+        # Fallback markups
+        markups = {
+            "Fabric": {"SL": 1.15, "Bangladesh": 1.20},
+            "Elastic": {"SL": 1.15, "Bangladesh": 1.20},
+            "Lace": {"SL": 1.15, "Bangladesh": 1.20}
+        }
+        rm_types = ["Fabric", "Elastic", "Lace"]
+    
+    # Determine if rates are current
+    current_date = pd.Timestamp.now()
+    is_current_month = False
+    rate_month_year = ""
+    
+    if latest_date:
+        # Check if the latest date is in the current month and year
+        is_current_month = (latest_date.month == current_date.month and 
+                           latest_date.year == current_date.year)
+        rate_month_year = latest_date.strftime('%B %Y')
+    
+    return air_rates, sea_rates, all_destinations, destination_countries, is_current_month, rate_month_year, markups, rm_types
 
 # Update the function call
-air_rates, sea_rates, all_destinations = load_rate_tables()
-
-
+air_rates, sea_rates, all_destinations, destination_countries, is_current_month, rate_month_year, markups, rm_types = load_rate_tables()
 # ----------------------
 # LOGIN PAGE
 # ----------------------
@@ -258,13 +380,27 @@ if not st.session_state.logged_in:
     The company is not liable for costs arising from using unconfirmed rate calculations.
     """)
 
-# REST OF YOUR CODE REMAINS THE SAME...
-else:
 
+else:
     role = st.session_state.role
     st.title(f"📦 Freight Rate Calculator ({role})")
-    # Add admin link right after title
+    
+    # Add admin link right after title with rate status warning
     if role == "Admin":
+        # Rate status warning
+        if not is_current_month:
+            st.error(f"""
+            ⚠️ **RATE UPDATE REQUIRED - Using rates from {rate_month_year}**
+            
+            The current rates in the calculator are from **{rate_month_year}**. 
+            Please update to the latest month's rates as soon as possible.
+            
+            [Click here to update rates](https://docs.google.com/spreadsheets/d/1VbxX1HVABJOi24J9oZ_u-BW02I4cAQTGi0QJHPFWQ9Y/edit?gid=0#gid=0)
+            """)
+        else:
+            st.success(f"✅ Rates are current for {rate_month_year}")
+        
+        # Admin actions box
         st.markdown("""
         <div style="background-color: #e8f4fd; padding: 10px; border-radius: 5px; margin-bottom: 20px;">
             <strong>🔧 Admin Actions:</strong> To update freight rates, please 
@@ -275,6 +411,9 @@ else:
             <small>Changes made to the spreadsheet will automatically reflect in the calculator within 30 minutes.</small>
         </div>
         """, unsafe_allow_html=True)
+    
+
+    
     # Display user info in header
     col1, col2, col3 = st.columns([3, 1, 1])
     with col1:
@@ -292,40 +431,45 @@ else:
     # ----------------------
     # CONSTANTS
     # ----------------------
-    AIR_MARKUP = 1.2
-    SEA_MARKUP = 1.3
+  
     KG_PER_CBM = 166
-
-
 
 
 
     # ----------------------
     # INPUTS (MAIN ITEM)
     # ----------------------
-    col_item, col_region, col_dest, col_weight, col_width = st.columns([2, 2, 2, 2, 2])
-
-    all_countries = sorted(set(air_rates.keys()) | set(sea_rates.keys()))
+    col_item, col_dest, col_region, col_weight, col_width = st.columns([2, 2, 2, 2, 2])
 
     with col_item:
         st.subheader("📦 Item")
         supplier = st.text_input("Supplier", key="main_supplier")
         sqn = st.text_input("SQN", key="main_sqn")
+        rm_type = st.selectbox("Select RM Type", rm_types, key="main_rm_type")
 
-    with col_region:
-        st.subheader("🗺️ Origin")
-        country = st.selectbox("Country", all_countries, key="main_country")
-        
-        # Get origins for selected country
-        air_origins = set(air_rates.get(country, {}).keys())
-        sea_origins = set(sea_rates.get(country, {}).keys())
-        all_origins = sorted(air_origins | sea_origins)
-        
-        origin = st.selectbox("Origin", all_origins, key="main_origin")
 
     with col_dest:
         st.subheader("🎯 Destination")
-        destination = st.selectbox("Destination", all_destinations, key="main_destination")
+        destination = st.selectbox("Select Destination", all_destinations, key="main_destination")
+
+    with col_region:
+        st.subheader("🗺️ Origin")
+        
+        # Get available countries for selected destination
+        if destination in destination_countries:
+            available_countries = sorted(destination_countries[destination]["countries"])
+        else:
+            available_countries = []
+        
+        country = st.selectbox("Country", available_countries, key="main_country")
+        
+        # Get available origins for selected country and destination
+        if destination in destination_countries and country in destination_countries[destination]["origins_by_country"]:
+            available_origins = sorted(destination_countries[destination]["origins_by_country"][country])
+        else:
+            available_origins = []
+        
+        origin = st.selectbox("Origin", available_origins, key="main_origin")
 
     with col_weight:
         st.subheader("🧵 Weight")
@@ -341,6 +485,7 @@ else:
     results = [{
         "supplier": supplier,
         "sqn": sqn,
+        "rm_type": rm_type,
         "country": country,
         "origin": origin,
         "destination": destination,  # Add destination
@@ -350,24 +495,26 @@ else:
         "unit": unit
     }]
 
+
     # ----------------------
     # ADDITIONAL ITEMS
     # ----------------------
     st.divider()
 
     # Initialize additional rows in session state
-    # Initialize additional rows in session state
     if "additional_rows" not in st.session_state:
         st.session_state.additional_rows = []
 
+    # Add button for more items
     # Add button for more items
     if st.button("➕ Add Another Item"):
         st.session_state.additional_rows.append({
             "supplier": "",
             "sqn": "",
+            "rm_type": rm_types[0] if rm_types else "",  # Add RM Type with default
             "country": "",
             "origin": "",
-            "destination": "",  # Add destination
+            "destination": all_destinations[0] if all_destinations else "",
             "weight_value": 0.0,
             "weight_type": "GSM (g/m²)",
             "width": 0.0,
@@ -375,10 +522,10 @@ else:
             "key": len(st.session_state.additional_rows)
         })
 
-    # Display additional items
+    # In the display section, update columns to include RM Type
     for idx, row in enumerate(st.session_state.additional_rows):
         with st.expander(f"Additional Item {idx + 1}", expanded=True):
-            cols = st.columns([2, 2, 2, 2, 2, 1])  # Added one more column
+            cols = st.columns([1.5, 1.5, 2, 2, 2, 2, 1])  # Added one more column for RM Type
             
             with cols[0]:
                 st.subheader("📦 Item Info")
@@ -386,38 +533,80 @@ else:
                 row["sqn"] = st.text_input("SQN", value=row["sqn"], key=f"add_sqn_{idx}")
             
             with cols[1]:
-                st.subheader("🗺️ Origin")
-                row["country"] = st.selectbox("Country", all_countries, key=f"add_country_{idx}")
-                
-                air_origins = set(air_rates.get(row["country"], {}).keys())
-                sea_origins = set(sea_rates.get(row["country"], {}).keys())
-                all_origins_add = sorted(air_origins | sea_origins)
-                
-                row["origin"] = st.selectbox("Origin", all_origins_add, key=f"add_origin_{idx}")
+                st.subheader("🏷️ RM Type")
+                rm_key = f"add_rm_type_{idx}"
+                row["rm_type"] = st.selectbox(
+                    "Select RM Type", 
+                    rm_types,
+                    index=rm_types.index(row["rm_type"]) if row["rm_type"] in rm_types else 0,
+                    key=rm_key
+                )
             
             with cols[2]:
                 st.subheader("🎯 Destination")
-                row["destination"] = st.selectbox("Destination", all_destinations, key=f"add_destination_{idx}")
+                dest_key = f"add_destination_{idx}"
+                row["destination"] = st.selectbox(
+                    "Select Destination", 
+                    all_destinations, 
+                    index=all_destinations.index(row["destination"]) if row["destination"] in all_destinations else 0,
+                    key=dest_key
+                )
             
             with cols[3]:
+                st.subheader("🗺️ Origin")
+                
+                # Get available countries for selected destination
+                if row["destination"] in destination_countries:
+                    available_countries = sorted(destination_countries[row["destination"]]["countries"])
+                else:
+                    available_countries = []
+                
+                country_key = f"add_country_{idx}"
+                if row["country"] not in available_countries:
+                    row["country"] = available_countries[0] if available_countries else ""
+                
+                row["country"] = st.selectbox(
+                    "Country", 
+                    available_countries,
+                    key=country_key
+                )
+                
+                # Get available origins for selected country and destination
+                if (row["destination"] in destination_countries and 
+                    row["country"] in destination_countries[row["destination"]]["origins_by_country"]):
+                    available_origins = sorted(destination_countries[row["destination"]]["origins_by_country"][row["country"]])
+                else:
+                    available_origins = []
+                
+                origin_key = f"add_origin_{idx}"
+                if row["origin"] not in available_origins:
+                    row["origin"] = available_origins[0] if available_origins else ""
+                
+                row["origin"] = st.selectbox(
+                    "Origin", 
+                    available_origins,
+                    key=origin_key
+                )
+            
+            with cols[4]:
                 st.subheader("🧵 Weight")
                 row["weight_value"] = st.number_input("Weight Value", min_value=0.0, step=0.1, value=row["weight_value"], key=f"add_weight_{idx}")
                 row["weight_type"] = st.selectbox("Weight Type", ["GSM (g/m²)", "GSM (kg/m²)", "GLM (g/m)"], key=f"add_weight_type_{idx}")
             
-            with cols[4]:
+            with cols[5]:
                 st.subheader("📏 Width")
                 row["width"] = st.number_input("Width", min_value=0.0, step=0.1, value=row["width"], key=f"add_width_{idx}")
                 row["unit"] = st.selectbox("Unit", ["CM", "IN", "M"], key=f"add_unit_{idx}")
             
-            with cols[5]:
+            with cols[6]:
                 st.subheader(" ")
                 st.write(" ")
                 if st.button("🗑️ Remove", key=f"remove_{idx}"):
                     st.session_state.additional_rows.pop(idx)
                     st.rerun()
             
-            # Add to results
             results.append(row)
+
 
 
     # ----------------------
@@ -444,32 +633,45 @@ else:
         
         kg_per_m_item = gsm_kg_item * width_m_item
         
-        # RATE AVAILABILITY for each item (now destination-specific)
+        # Get markups for this RM Type and destination
+        air_markup = None
+        sea_markup = None
+        
+        if item["rm_type"] in markups and item["destination"] in markups[item["rm_type"]]:
+            markup_value = markups[item["rm_type"]][item["destination"]]
+            air_markup = markup_value
+            sea_markup = markup_value  # Using same markup for both, adjust if needed
+        else:
+            # Fallback markups if not found
+            air_markup = 1.15
+            sea_markup = 1.15
+        
+        # RATE AVAILABILITY for each item
         air_rate_item = None
         sea_rate_item = None
-        
+
         # Check if country and origin exist in rates
-        if country in air_rates and item["origin"] in air_rates[item["country"]]:
+        if item["country"] in air_rates and item["origin"] in air_rates[item["country"]]:
             air_rate_item = air_rates[item["country"]][item["origin"]].get(item["destination"])
-        
-        if country in sea_rates and item["origin"] in sea_rates[item["country"]]:
+
+        if item["country"] in sea_rates and item["origin"] in sea_rates[item["country"]]:
             sea_rate_item = sea_rates[item["country"]][item["origin"]].get(item["destination"])
-        
+
         air_available_item = air_rate_item is not None
         sea_available_item = sea_rate_item is not None
-        
-        # CALCULATIONS for each item
+
+        # CALCULATIONS for each item with dynamic markups
         final_air_rate_item = None
         final_sea_rate_item = None
         
         if air_available_item:
             air_freight_per_m_item = air_rate_item * kg_per_m_item
-            final_air_rate_item = air_freight_per_m_item * AIR_MARKUP
+            final_air_rate_item = air_freight_per_m_item * air_markup
         
         if sea_available_item:
             cbm_per_m_item = kg_per_m_item / KG_PER_CBM
             sea_freight_per_m_item = sea_rate_item * cbm_per_m_item
-            final_sea_rate_item = sea_freight_per_m_item * SEA_MARKUP
+            final_sea_rate_item = sea_freight_per_m_item * sea_markup
         
         # Build result data for this item
         item_data = {
@@ -477,10 +679,11 @@ else:
             "User": st.session_state.display_name,
             "User Email": st.session_state.user_email,
             "Supplier": item["supplier"],
-            "SQN": item["sqn"], 
+            "SQN": item["sqn"],
+            "RM Type": item["rm_type"],  # Add RM Type
             "Country": item["country"],
             "Origin": item["origin"],
-            "Destination": item["destination"],  # Add destination
+            "Destination": item["destination"],
             "Weight Value": item["weight_value"],
             "Weight Type": item["weight_type"],
             "Converted GSM (g/m²)": round(display_gsm_item, 2) if item["weight_type"] == "GLM (g/m)" else None,
@@ -488,9 +691,9 @@ else:
             "Unit": item["unit"],
             "Width (m)": round(width_m_item, 4),
             "Weight/m (kg)": round(kg_per_m_item, 6),
+            "Air Markup": air_markup,  # Show markup used
+            "Sea Markup": sea_markup,  # Show markup used
         }
-    
-    # Rest of your code remains the same...
         
         # ---- Admin sees full rate breakdown
         if role == "Admin":
@@ -524,78 +727,13 @@ else:
     # Display dataframe
     st.dataframe(df)
     
-    # # Create a copyable text version with table format
-    # st.divider()
-    # st.subheader("📋 Copy for Email")
-    
-    # # Create a clean table text version for copying
-    # summary_text = "FREIGHT RATE CALCULATION SUMMARY\n"
-    # summary_text += "=" * 50 + "\n\n"
-    
-    # # Header row
-    # headers = ["Item", "Supplier", "SQN", "Country", "Origin", "Weight", "Width", "Air Rate ($/m)", "Sea Rate ($/m)"]
-    # summary_text += " | ".join(headers) + "\n"
-    # summary_text += "-" * 100 + "\n"
-    
-    # # Data rows
-    # for idx, row in df.iterrows():
-    #     item_num = f"Item {idx + 1}"
-    #     supplier = str(row['Supplier'])[:15] if len(str(row['Supplier'])) > 15 else str(row['Supplier'])
-    #     sqn = str(row['SQN'])[:10] if len(str(row['SQN'])) > 10 else str(row['SQN'])
-    #     country = str(row['Country'])[:10] if len(str(row['Country'])) > 10 else str(row['Country'])
-    #     origin = str(row['Origin'])[:10] if len(str(row['Origin'])) > 10 else str(row['Origin'])
-    #     weight = f"{row['Weight Value']} {row['Weight Type'][:8]}"
-    #     width = f"{row['Width']} {row['Unit']}"
-        
-    #     # Get rates
-    #     air_rate = f"${row['Final Air Rate ($)']:.4f}" if 'Final Air Rate ($)' in row and pd.notna(row['Final Air Rate ($)']) else "N/A"
-    #     sea_rate = f"${row['Final Sea Rate ($)']:.4f}" if 'Final Sea Rate ($)' in row and pd.notna(row['Final Sea Rate ($)']) else "N/A"
-        
-    #     summary_text += f"{item_num:8} | {supplier:15} | {sqn:10} | {country:10} | {origin:10} | {weight:20} | {width:10} | {air_rate:15} | {sea_rate:15}\n"
-    
-    # summary_text += "\n" + "=" * 50 + "\n\n"
-    
-    # # Add details for each item in a cleaner format
-    # summary_text += "DETAILED BREAKDOWN:\n"
-    # summary_text += "-" * 50 + "\n\n"
-    
-    # for idx, row in df.iterrows():
-    #     summary_text += f"{idx + 1}. {row['Supplier']} - {row['SQN']}:\n"
-    #     summary_text += f"   • Country/Origin: {row['Country']} / {row['Origin']}\n"
-    #     summary_text += f"   • Weight: {row['Weight Value']} {row['Weight Type']}"
-    #     if pd.notna(row['Converted GSM (g/m²)']):
-    #         summary_text += f" (Converted: {row['Converted GSM (g/m²)']} g/m²)"
-    #     summary_text += "\n"
-    #     summary_text += f"   • Width: {row['Width']} {row['Unit']} = {row['Width (m)']} m\n"
-    #     summary_text += f"   • Weight per meter: {row['Weight/m (kg)']} kg/m\n"
-        
-    #     if 'Final Air Rate ($)' in row and pd.notna(row['Final Air Rate ($)']):
-    #         summary_text += f"   • Air Freight Rate: ${row['Final Air Rate ($)']:.4f} per meter\n"
-    #     if 'Final Sea Rate ($)' in row and pd.notna(row['Final Sea Rate ($)']):
-    #         summary_text += f"   • Sea Freight Rate: ${row['Final Sea Rate ($)']:.4f} per meter\n"
-        
-    #     summary_text += "\n"
-    
-    # # Add confirmation at the end
-    # summary_text += "CONFIRMATION:\n"
-    # summary_text += "=" * 50 + "\n\n"
-    # summary_text += "Please find below the approximate per meter/per piece freight cost based on your request.\n\n"
-    # summary_text += "Kindly note that these costs have been calculated using the material details provided by your team, "
-    # summary_text += "along with the current market freight rates. However, please be aware that these rates are subject "
-    # summary_text += "to change and may vary from the actual costs due to high volatility in the freight market.\n\n"
-    # summary_text += "These outputs are calculated and confirmed by Logistics.\n"
-    
-    # # Display in a text area for easy copying
-    # st.text_area("📄 Copy the text below for email (Ctrl+A then Ctrl+C):", 
-    #             value=summary_text, 
-    #             height=400,
-    #             key="copyable_summary")
-    
+   
     # Also show a clean markdown version for reference
     st.divider()
     st.subheader("📧 Email Confirming Preview-Copy Below")
     
     # Create markdown table preview
+    # In the email preview section, update table_data
     table_data = []
     for idx, row in df.iterrows():
         # Format weight with type
@@ -618,9 +756,10 @@ else:
             "User": row['User'],
             "Supplier": row['Supplier'],
             "SQN": row['SQN'],
+            "RM Type": row['RM Type'],  # Add RM Type
             "Country": row['Country'],
             "Origin": row['Origin'],
-            "Destination": row['Destination'],  # Add destination
+            "Destination": row['Destination'],
             "Weight": weight_display,
             "Width": width_display,
             "Weight/m": weight_per_m,
@@ -632,13 +771,13 @@ else:
     if table_data:
         html_table = "<table style='width:100%; border-collapse: collapse;'>"
         html_table += "<tr style='background-color: #f2f2f2;'>"
-        for col in ["Item", "User", "Supplier", "SQN", "Country", "Origin", "Destination", "Weight", "Width", "Weight/m", "Air Rate", "Sea Rate"]:
+        for col in ["Item", "User", "Supplier", "SQN", "RM Type", "Country", "Origin", "Destination", "Weight", "Width", "Weight/m", "Air Rate", "Sea Rate"]:
             html_table += f"<th style='border: 1px solid #ddd; padding: 8px; text-align: left;'>{col}</th>"
         html_table += "</tr>"
         
         for row in table_data:
             html_table += "<tr>"
-            for col in ["Item", "User", "Supplier", "SQN", "Country", "Origin", "Destination", "Weight", "Width", "Weight/m", "Air Rate", "Sea Rate"]:
+            for col in ["Item", "User", "Supplier", "SQN", "RM Type", "Country", "Origin", "Destination", "Weight", "Width", "Weight/m", "Air Rate", "Sea Rate"]:
                 html_table += f"<td style='border: 1px solid #ddd; padding: 8px;'>{row[col]}</td>"
             html_table += "</tr>"
         html_table += "</table>"
@@ -682,9 +821,11 @@ else:
                         air_freight_per_m = item_data['Air Rate ($/kg)'] * item_data['Weight/m (kg)']
                         st.metric("Freight / m ($)", f"${air_freight_per_m:.4f}")
                         st.metric("Final Rate ($)", f"${item_data['Final Air Rate ($)']:.4f}")
-                        st.caption(f"Air Markup: {AIR_MARKUP}")
+                        st.caption(f"RM Type: {item['rm_type']} | Markup: {item_data.get('Air Markup', 'N/A')}x")
                     else:
                         st.metric("Final Rate ($)", f"${item_data['Final Air Rate ($)']:.4f}")
+                        st.caption(f"RM Type: {item['rm_type']} | Markup applied")
+
                 else:
                     st.warning("✈️ Air freight not available for this route")
             
@@ -702,9 +843,11 @@ else:
                         sea_freight_per_m = item_data['Sea Rate ($/CBM)'] * cbm_per_m
                         st.metric("Freight / m ($)", f"${sea_freight_per_m:.4f}")
                         st.metric("Final Rate ($)", f"${item_data['Final Sea Rate ($)']:.4f}")
-                        st.caption(f"Sea Markup: {SEA_MARKUP}")
+                        st.caption(f"RM Type: {item['rm_type']} | Markup: {item_data.get('Sea Markup', 'N/A')}")
                     else:
                         st.metric("Final Rate ($)", f"${item_data['Final Sea Rate ($)']:.4f}")
+                        st.caption(f"RM Type: {item['rm_type']} | Markup applied")
+
                 else:
                     st.warning("🚢 Sea freight not available for this route")
             
@@ -748,9 +891,12 @@ else:
                 if role == "Admin":
                     air_freight_per_m = item_data['Air Rate ($/kg)'] * item_data['Weight/m (kg)']
                     lines.append(f"• Air freight per meter = {item_data['Air Rate ($/kg)']:.2f} × {item_data['Weight/m (kg)']:.6f} = {air_freight_per_m:.6f} USD.")
-                    lines.append(f"• Final Air rate = {air_freight_per_m:.6f} × markup {AIR_MARKUP} = {item_data['Final Air Rate ($)']:.6f} USD.")
+                    # Use dynamic markup
+                    air_markup_value = item_data.get('Air Markup', 1.15)
+                    lines.append(f"• Final Air rate = {air_freight_per_m:.6f} × markup {air_markup_value} = {item_data['Final Air Rate ($)']:.6f} USD.")
+                    lines.append(f"  (Markup based on RM Type: {item['rm_type']} for destination: {item['destination']})")
                 else:
-                    lines.append("• Air freight = (Air base rate × kg per meter) adjusted to final selling rate.")
+                    lines.append("• Air freight = (Air base rate × kg per meter) adjusted to final selling rate with RM Type-specific markup.")
             
             # ---- SEA
             if sea_available_item:
@@ -759,8 +905,11 @@ else:
                     sea_freight_per_m = item_data['Sea Rate ($/CBM)'] * cbm_per_m
                     lines.append(f"• CBM per meter = {item_data['Weight/m (kg)']:.6f} ÷ {KG_PER_CBM} = {cbm_per_m:.8f}.")
                     lines.append(f"• Sea freight per meter = {item_data['Sea Rate ($/CBM)']:.2f} × {cbm_per_m:.8f} = {sea_freight_per_m:.6f} USD.")
-                    lines.append(f"• Final Sea rate = {sea_freight_per_m:.6f} × markup {SEA_MARKUP} = {item_data['Final Sea Rate ($)']:.6f} USD.")
+                    # Use dynamic markup
+                    sea_markup_value = item_data.get('Sea Markup', 1.15)
+                    lines.append(f"• Final Sea rate = {sea_freight_per_m:.6f} × markup {sea_markup_value} = {item_data['Final Sea Rate ($)']:.6f} USD.")
+                    lines.append(f"  (Markup based on RM Type: {item['rm_type']} for destination: {item['destination']})")
                 else:
-                    lines.append("• Sea freight = (CBM per meter × Sea base rate) adjusted to final selling rate.")
+                    lines.append("• Sea freight = (CBM per meter × Sea base rate) adjusted to final selling rate with RM Type-specific markup.")
             
             st.markdown("\n".join(lines))
